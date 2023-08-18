@@ -20,12 +20,6 @@ from plotly.subplots import make_subplots
 import plotly.express as px
 from sqlalchemy import true
 
-city_lvl_df = pd.read_csv('data/city_lvl_df.csv')
-district_lvl_df = pd.read_csv('data/district_lvl_df.csv')
-city_lvl_df_daily = pd.read_csv('data/city_lvl_df_daily.csv')
-raw = pd.read_csv('data/raw_t2_t3_18jul_25jul.csv').rename(columns = {'created_time': 'Date/Time', 'pick_longitude': 'Lon', 'pick_latitude': 'Lat', 'report_date': 'Date'})
-
-
 app = dash.Dash(
     __name__, meta_tags=[{"name": "viewport", "content": "width=device-width"}],
 )
@@ -53,12 +47,21 @@ list_of_locations = {
     "Quang Nam": {"city_name": "Quang Nam", "lat": 15.87944, "lon": 108.335}
 }
 
+# import datasets
+city_lvl_df = pd.read_csv('src/data/city_lvl_df.csv')
+district_lvl_df = pd.read_csv('src/data/district_lvl_df.csv')
+city_lvl_df_daily = pd.read_csv('src/data/city_lvl_df_daily.csv')
+raw = pd.read_csv('src/data/raw_final.csv').rename(columns = {'created_time': 'Date/Time', 'timeslot': 'Timeslot','pick_longitude': 'Lon', 'pick_latitude': 'Lat', 'report_date': 'Date'})
+
+# transform datadtypes
+city_lvl_df['created_date'] = pd.to_datetime(city_lvl_df['created_date'])
+district_lvl_df['created_date'] = pd.to_datetime(district_lvl_df['created_date'])
+raw['Date'] = pd.to_datetime(raw['Date'])
 
 # Initialize data frame
-raw["Date/Time"] = pd.to_datetime(raw["Date/Time"])
-raw.index = raw["Date/Time"]
-raw['Timeslot'] = raw["Date/Time"].dt.hour
-
+raw['Date/Time'] = pd.to_datetime(raw['Date'])
+raw.index = raw['Date/Time']
+# raw['Timeslot'] = raw['Date/Time'].dt.hour
 
 totalList = []
 for month in raw.groupby(raw.index.month):
@@ -69,12 +72,6 @@ for month in raw.groupby(raw.index.month):
 totalList = np.array(totalList)
 
 raw.reset_index(drop=True, inplace=True)
-
-# city_lvl_df = pd.read_csv('data\city level data\city_lvl_df.csv')
-# district_lvl_df = pd.read_csv('data\district level data\district_lvl_df.csv')
-
-city_lvl_df['created_date'] = pd.to_datetime(city_lvl_df['created_date'])
-district_lvl_df['created_date'] = pd.to_datetime(district_lvl_df['created_date'])
 
 # Layout of Dash App
 app.layout = html.Div(
@@ -211,6 +208,20 @@ app.layout = html.Div(
             className="text-padding",
             children=[
                 "Indices tracking"
+            ],
+        ),
+        html.Div(
+            className="div-for-dropdown",
+            children=[
+                dcc.DatePickerSingle(
+                    id="date-picker2",
+                    min_date_allowed=city_lvl_df['created_date'].min().date(),
+                    max_date_allowed=city_lvl_df['created_date'].max().date(),
+                    initial_visible_month=city_lvl_df['created_date'].max().date(),
+                    date=city_lvl_df['created_date'].min().date(),
+                    display_format="MMMM D, YYYY",
+                    style={"border": "0px solid black"},
+                )
             ],
         ),
         # first row
@@ -493,7 +504,8 @@ def update_graph(datePicked, selectedData, selectedLocation, selectedMap, select
 
     if selected_map == "Scatter plot":
         fig = px.scatter_mapbox(
-                data_frame = raw[(raw["city_name"] == city_name) & (raw["Date"] == date_picked) & (raw["Timeslot"].isin(timeslot)) & (raw["cancel_reason"] == selected_index)],
+                # data_frame = raw[(raw["city_name"] == city_name) & (raw["Date"] == date_picked) & (raw["Timeslot"].isin(timeslot)) & (raw["cancel_reason"] == selected_index)],
+                data_frame = raw[(raw["Timeslot"].isin(timeslot)) & (raw["cancel_reason"] == selected_index)],
                 lat='Lat',
                 lon='Lon',
                 # color_discrete_sequence = selected_color 
@@ -584,7 +596,9 @@ def update_graph(datePicked, selectedData, selectedLocation, selectedMap, select
         return fig
  
     if selected_map == "Heat map":
-        fig = ff.create_hexbin_mapbox(data_frame=raw[(raw["city_name"] == city_name) & (raw["Date"] == date_picked) & (raw["Timeslot"].isin(timeslot)) & (raw["cancel_reason"] == selected_index)], 
+        fig = ff.create_hexbin_mapbox(
+            # data_frame=raw[(raw["city_name"] == city_name) & (raw["Date"] == date_picked) & (raw["Timeslot"].isin(timeslot)) & (raw["cancel_reason"] == selected_index)], 
+            data_frame = raw[(raw["Timeslot"].isin(timeslot)) & (raw["cancel_reason"] == selected_index)],
                                             lat="Lat", lon="Lon",
                                             nx_hexagon=20, 
                                             opacity=0.5, 
@@ -664,7 +678,6 @@ def update_histogram(datePicked, selectedLocation, selectedIndex):
         city_name = list_of_locations[selectedLocation]['city_name']
     if selectedIndex:
         selected_index = selectedIndex
-
     layout = go.Layout(
         bargap=0.01,
         bargroupgap=0,
@@ -723,10 +736,10 @@ time_range = range(7,22,1)
 
 @app.callback(
     Output("orderlevel-graph", "figure"),
-    [Input("date-picker", "date"), Input("location-dropdown", "value")],
+    [Input("date-picker", "date"), Input("location-dropdown", "value"), Input("date-picker2", "date")],
 )
 
-def update_orderlevel_graph(datePicked, selectedLocation):
+def update_orderlevel_graph(datePicked, selectedLocation, fromDate):
     date_picked = pd.to_datetime(dt.strptime(datePicked, "%Y-%m-%d"))
     city_name = 'Hai Phong City'
     
@@ -743,16 +756,16 @@ def update_orderlevel_graph(datePicked, selectedLocation):
                         specs=[[{"secondary_y": False}],
                               [{"secondary_y": True}]])     
 
-    fig.add_trace(go.Bar(x=city_lvl_df_daily['created_date'][(city_lvl_df_daily['pick_city_name'] == city_name)], 
-                         y=city_lvl_df_daily['%bw'][(city_lvl_df_daily['pick_city_name'] == city_name)], 
-                        text=np.array((city_lvl_df_daily['%bw'][(city_lvl_df_daily['pick_city_name'] == city_name)]*100).round(0).astype('int').astype(str) + '%'),
+    fig.add_trace(go.Bar(x=city_lvl_df_daily['created_date'][(city_lvl_df_daily['pick_city_name'] == city_name) & (city_lvl_df_daily['created_date'] >= fromDate)], 
+                         y=city_lvl_df_daily['%bw'][(city_lvl_df_daily['pick_city_name'] == city_name) & (city_lvl_df_daily['created_date'] >= fromDate)], 
+                        text=np.array((city_lvl_df_daily['%bw'][(city_lvl_df_daily['pick_city_name'] == city_name) & (city_lvl_df_daily['created_date'] >= fromDate)]*100).round(0).astype('int').astype(str) + '%'),
                         textposition="none",
                         # texttemplate="%{text: .0%}",
                          name = 'BW impact'), row = 1, col = 1)
     
-    fig.add_trace(go.Bar(x=city_lvl_df_daily['created_date'][(city_lvl_df_daily['pick_city_name'] == city_name)], 
-                         y=city_lvl_df_daily['cnd'][(city_lvl_df_daily['pick_city_name'] == city_name)], 
-                        text=np.array((city_lvl_df_daily['%cnd'][(city_lvl_df_daily['pick_city_name'] == city_name)]*100).round(1).astype(str) + '%'),
+    fig.add_trace(go.Bar(x=city_lvl_df_daily['created_date'][(city_lvl_df_daily['pick_city_name'] == city_name) & (city_lvl_df_daily['created_date'] >= fromDate)], 
+                         y=city_lvl_df_daily['cnd'][(city_lvl_df_daily['pick_city_name'] == city_name) & (city_lvl_df_daily['created_date'] >= fromDate)], 
+                        text=np.array((city_lvl_df_daily['%cnd'][(city_lvl_df_daily['pick_city_name'] == city_name) & (city_lvl_df_daily['created_date'] >= fromDate)]*100).round(1).astype(str) + '%'),
                         textposition="none",
                         # texttemplate="%{text: .0%}",
                          name='CND',
@@ -760,8 +773,8 @@ def update_orderlevel_graph(datePicked, selectedLocation):
                         ),
                   secondary_y = False, row = 2, col = 1
                  )    
-    fig.add_trace(go.Bar(x=city_lvl_df_daily['created_date'][(city_lvl_df_daily['pick_city_name'] == city_name)], 
-                         y=city_lvl_df_daily['cancel_by_mex_users'][(city_lvl_df_daily['pick_city_name'] == city_name)], 
+    fig.add_trace(go.Bar(x=city_lvl_df_daily['created_date'][(city_lvl_df_daily['pick_city_name'] == city_name) & (city_lvl_df_daily['created_date'] >= fromDate)], 
+                         y=city_lvl_df_daily['cancel_by_mex_users'][(city_lvl_df_daily['pick_city_name'] == city_name) & (city_lvl_df_daily['created_date'] >= fromDate)], 
                         # text=np.array(city_lvl_df_daily['%inactive_drivers'][(city_lvl_df_daily['created_date'] == '2022-07-10') & (city_lvl_df_daily['pick_city_name'] == 'Hai Phong City')]),
                         # textposition="inside",
                         # texttemplate="%{text: .0%}",
@@ -770,9 +783,9 @@ def update_orderlevel_graph(datePicked, selectedLocation):
                         ),
                   secondary_y = False, row = 2, col = 1
                  )
-    fig.add_trace(go.Bar(x=city_lvl_df_daily['created_date'][(city_lvl_df_daily['pick_city_name'] == city_name)], 
-                         y=city_lvl_df_daily['total_delivered'][(city_lvl_df_daily['pick_city_name'] == city_name)], 
-                        text=np.array((city_lvl_df_daily['%g2n'][(city_lvl_df_daily['pick_city_name'] == city_name)]*100).round(0).astype('int').astype(str) + '%'),
+    fig.add_trace(go.Bar(x=city_lvl_df_daily['created_date'][(city_lvl_df_daily['pick_city_name'] == city_name) & (city_lvl_df_daily['created_date'] >= fromDate)], 
+                         y=city_lvl_df_daily['total_delivered'][(city_lvl_df_daily['pick_city_name'] == city_name) & (city_lvl_df_daily['created_date'] >= fromDate)], 
+                        text=np.array((city_lvl_df_daily['%g2n'][(city_lvl_df_daily['pick_city_name'] == city_name) & (city_lvl_df_daily['created_date'] >= fromDate)]*100).round(0).astype('int').astype(str) + '%'),
                         textposition="inside",
                         # texttemplate="%{text: .0%}",
                          name='delivered',
@@ -780,8 +793,8 @@ def update_orderlevel_graph(datePicked, selectedLocation):
                         ),
                   secondary_y = False, row = 2, col =1
                  ) 
-    fig.add_trace(go.Scatter(x=city_lvl_df_daily['created_date'][(city_lvl_df_daily['pick_city_name'] == city_name)], 
-                         y=city_lvl_df_daily['A1'][(city_lvl_df_daily['pick_city_name'] == city_name)], 
+    fig.add_trace(go.Scatter(x=city_lvl_df_daily['created_date'][(city_lvl_df_daily['pick_city_name'] == city_name) & (city_lvl_df_daily['created_date'] >= fromDate)], 
+                         y=city_lvl_df_daily['A1'][(city_lvl_df_daily['pick_city_name'] == city_name) & (city_lvl_df_daily['created_date'] >= fromDate)], 
                         # text=np.array(city_lvl_df_daily['%g2n'][(city_lvl_df_daily['pick_city_name'] == city_name)]),
                         # textposition="inside",
                         # texttemplate="%{text: .0%}",
