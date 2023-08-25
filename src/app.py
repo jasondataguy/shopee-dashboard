@@ -182,7 +182,7 @@ app.layout = html.Div(
                         html.P(id="date-value"),
                         dcc.Markdown(
                             """
-                            Source: [Jason Data Guy](https://github.com/jasondataguy)
+                            Source: [Jason Data Guy](https://github.com/jasonthedataguy)
 
                             """
                         ),
